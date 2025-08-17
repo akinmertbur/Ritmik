@@ -12,7 +12,9 @@ export function suggestPlaylist(req, res) {
 
   // Check if we have a playlist for the given emotion
   if (!playlist || !playlist.length) {
-    return res.status(404).json({ error: `No playlist found for emotion: ${emotion}` });
+    return res
+      .status(404)
+      .json({ error: `No playlist found for emotion: ${emotion}` });
   }
 
   // Success response
