@@ -1,91 +1,107 @@
-// client/src/App.jsx
 import { useState } from "react";
+import { fetchPlaylist } from "./services/api";
 import EmotionPhoto from "./components/EmotionPhoto";
 
-const EMOTIONS = [
-  "happy",
-  "sad",
-  "angry",
-  "relaxed",
-  "motivated",
-  "anxious",
-  "neutral",
-];
-
-export default function App() {
-  const [emotion, setEmotion] = useState("");
-  const [playlist, setPlaylist] = useState([]);
+function App() {
+  const [playlist, setPlaylist] = useState(null);
+  const [emotion, setEmotion] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function fetchPlaylist(targetEmotion) {
+  const handleEmotionDetected = async (emotion, isRetry = false) => {
+    if (!isRetry) setEmotion(emotion);
+    setError("");
+    setPlaylist(null);
+    setLoading(true);
+
     try {
-      setLoading(true);
-      setError("");
-      setPlaylist([]);
-      const res = await fetch("http://localhost:3000/api/playlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emotion: targetEmotion }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
-      setPlaylist(data.playlist);
-    } catch (e) {
-      setError(e.message);
+      const data = await fetchPlaylist(emotion);
+      if (!data || !data.playlist?.length) {
+        setError("No playlist found for this emotion 😕");
+      } else {
+        setPlaylist(data.playlist);
+      }
+    } catch (err) {
+      if (err.message.includes("Failed to fetch")) {
+        setError(
+          "⚠️ Server not reachable. Please check your connection or backend server."
+        );
+      } else if (err.message.includes("404")) {
+        setError("No playlist found for this emotion 😕");
+      } else {
+        setError("Unexpected error occurred. Please try again later.");
+      }
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  const handleDetectedEmotion = (detected) => {
-    setEmotion(detected);
-    fetchPlaylist(detected);
+  const handleRetry = () => {
+    if (emotion) handleEmotionDetected(emotion, true);
   };
 
   return (
-    <div style={{ maxWidth: 640, margin: "2rem auto", textAlign: "center" }}>
-      <h1>🎵 Ritmik</h1>
+    <div style={{ maxWidth: 520, margin: "1rem auto", textAlign: "center" }}>
+      <h1>🎵 Ritmik App</h1>
+      <p style={{ color: "#777" }}>Your mood-based playlist generator</p>
 
-      <EmotionPhoto onEmotionDetected={handleDetectedEmotion} />
+      <EmotionPhoto onEmotionDetected={handleEmotionDetected} />
 
-      <hr style={{ margin: "1.5rem 0" }} />
+      {emotion && (
+        <p>
+          Detected Emotion: <strong>{emotion}</strong>
+        </p>
+      )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!emotion) return setError("Select emotion");
-          fetchPlaylist(emotion);
-        }}
-      >
-        <select
-          value={emotion}
-          onChange={(e) => setEmotion(e.target.value)}
-          style={{ padding: "0.5rem", fontSize: "1rem" }}
+      {loading && (
+        <p style={{ color: "#3498db", marginTop: "1rem" }}>
+          Fetching playlist… ⏳
+        </p>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "#ffe8e8",
+            color: "#d9534f",
+            borderRadius: "8px",
+            padding: "0.8rem 1rem",
+            marginTop: "1rem",
+          }}
         >
-          <option value="">-- Select an emotion --</option>
-          {EMOTIONS.map((emo) => (
-            <option key={emo} value={emo}>
-              {emo.charAt(0).toUpperCase() + emo.slice(1)}
-            </option>
-          ))}
-        </select>
-        <br />
-        <button
-          type="submit"
-          style={{ marginTop: "0.75rem", padding: "0.5rem 1rem" }}
+          {error}
+          <br />
+          {emotion && (
+            <button
+              onClick={handleRetry}
+              style={{
+                marginTop: "0.5rem",
+                background: "#d9534f",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                padding: "0.4rem 1rem",
+                cursor: "pointer",
+              }}
+            >
+              Retry 🔁
+            </button>
+          )}
+        </div>
+      )}
+
+      {playlist && (
+        <div
+          style={{
+            marginTop: "1rem",
+            background: "#f9f9f9",
+            padding: "1rem",
+            borderRadius: "8px",
+            textAlign: "left",
+          }}
         >
-          Get Playlist
-        </button>
-      </form>
-
-      {loading && <p>Loading…</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      {playlist.length > 0 && (
-        <div style={{ marginTop: "1.25rem", textAlign: "left" }}>
-          <h3>Recommended Playlist ({emotion}):</h3>
-          <ul>
+          <h3>🎧 Suggested Playlist</h3>
+          <ul style={{ paddingLeft: "1.2rem" }}>
             {playlist.map((song, i) => (
               <li key={i}>{song}</li>
             ))}
@@ -95,3 +111,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;

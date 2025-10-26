@@ -1,6 +1,7 @@
 // client/src/components/EmotionPhoto.jsx
 import { useEffect, useRef, useState } from "react";
 import * as faceapi from "@vladmandic/face-api";
+import "./EmotionPhoto.css";
 
 const MODEL_URL = "/models";
 
@@ -35,87 +36,101 @@ export default function EmotionPhoto({ onEmotionDetected }) {
   const [urlInput, setUrlInput] = useState("");
   const [detected, setDetected] = useState(null);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const imgRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // Load face-api models
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
           faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         ]);
-        if (!cancelled) setModelsReady(true);
+        setModelsReady(true);
       } catch (e) {
-        setError("Model loading failed");
+        setError("Failed to load AI models.");
         console.error(e);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  // Analyze image once it’s loaded
   async function analyzeImage() {
     const img = imgRef.current;
-    if (!img) return;
-
-    if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-      setError("Image not loaded properly. Try again.");
+    if (!img || !img.complete || !img.naturalWidth) {
+      setError("Image not ready or invalid.");
       return;
     }
+
+    setLoading(true);
+    setError("");
+    setWarning("");
+    setDetected(null);
 
     const options = new faceapi.TinyFaceDetectorOptions({
       inputSize: 224,
       scoreThreshold: 0.5,
     });
 
-    const result = await faceapi
-      .detectSingleFace(img, options)
-      .withFaceExpressions();
+    try {
+      const results = await faceapi
+        .detectAllFaces(img, options)
+        .withFaceExpressions();
 
-    // Draw bounding box
-    const canvas = canvasRef.current;
-    if (canvas) {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (result?.detection) {
-        const b = result.detection.box;
+      if (results.length === 0) {
+        setError("No face detected. Try a clearer, front-facing image.");
+        setDetected(null);
+        return;
+      }
+
+      if (results.length > 1) {
+        setWarning(
+          `Multiple faces detected (${results.length}). Using the most prominent.`
+        );
+      } else {
+        setWarning("");
+      }
+
+      const largest = results.reduce((max, f) =>
+        f.detection.box.area > max.detection.box.area ? f : max
+      );
+
+      results.forEach((r) => {
+        const box = r.detection.box;
         ctx.lineWidth = 2;
         ctx.strokeStyle = "white";
-        ctx.strokeRect(b.x, b.y, b.width, b.height);
-      }
-    }
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+      });
 
-    if (!result?.expressions) {
-      setError("No face detected. Try a clearer, front-facing photo.");
-      return;
+      const emotion = mapExpressionsToEmotion(largest.expressions);
+      setDetected(emotion);
+      onEmotionDetected?.(emotion);
+    } catch (err) {
+      console.error("Detection error:", err);
+      setError("Something went wrong while analyzing the image.");
+    } finally {
+      setLoading(false);
     }
-
-    const emotion = mapExpressionsToEmotion(result.expressions);
-    setDetected(emotion);
-    onEmotionDetected?.(emotion);
   }
 
-  // Handle local file
-  function onFile(e) {
+  function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    setPreviewUrl(URL.createObjectURL(file));
     setDetected(null);
     setError("");
+    setWarning("");
   }
 
-  // Handle remote URL submit
-  function onUrlSubmit(e) {
+  function handleUrlSubmit(e) {
     e.preventDefault();
     if (!urlInput) return;
     const proxied = `http://localhost:3000/api/proxy-image?url=${encodeURIComponent(
@@ -124,31 +139,26 @@ export default function EmotionPhoto({ onEmotionDetected }) {
     setPreviewUrl(proxied);
     setDetected(null);
     setError("");
+    setWarning("");
   }
 
-  // Handlers for the <img>
-  const handleImgLoad = () => {
+  const retryDetection = () => {
+    setError("");
     analyzeImage();
-  };
-
-  const handleImgError = () => {
-    setError("Failed to load image. Check the URL or proxy.");
   };
 
   return (
     <div style={{ maxWidth: 520, margin: "1rem auto", textAlign: "center" }}>
       <h3>Analyze a Photo</h3>
 
-      {/* Local file upload */}
       <input
         type="file"
         accept="image/*"
-        onChange={onFile}
+        onChange={handleFile}
         disabled={!modelsReady}
       />
 
-      {/* Remote URL input */}
-      <form onSubmit={onUrlSubmit} style={{ marginTop: "0.5rem" }}>
+      <form onSubmit={handleUrlSubmit} style={{ marginTop: "0.5rem" }}>
         <input
           type="url"
           value={urlInput}
@@ -163,36 +173,44 @@ export default function EmotionPhoto({ onEmotionDetected }) {
       </form>
 
       {!modelsReady && <p>Loading models…</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      {error && (
+        <p style={{ color: "red" }}>
+          {error}
+          <button onClick={retryDetection} style={{ marginLeft: 8 }}>
+            Retry
+          </button>
+        </p>
+      )}
+      {warning && <p style={{ color: "orange" }}>{warning}</p>}
 
       {previewUrl && (
-        <div
-          style={{
-            position: "relative",
-            display: "inline-block",
-            marginTop: "1rem",
-          }}
-        >
+        <div className="image-wrap">
+          {/* Image & canvas */}
           <img
             ref={imgRef}
             src={previewUrl}
             alt="preview"
-            style={{ maxWidth: 500, width: "100%", borderRadius: 8 }}
+            className={`photo ${loading ? "photo-dim" : ""}`}
             crossOrigin="anonymous"
-            onLoad={handleImgLoad}
-            onError={handleImgError}
+            onLoad={analyzeImage}
+            onError={() =>
+              setError("Failed to load image. Check the URL or proxy.")
+            }
           />
-          <canvas
-            ref={canvasRef}
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: "100%",
-              height: "100%",
-              pointerEvents: "none",
-            }}
-          />
+          <canvas ref={canvasRef} className="photo-canvas" />
+
+          {/* Overlay spinner while analyzing */}
+          {loading && (
+            <div
+              className="overlay"
+              aria-busy="true"
+              aria-label="Analyzing photo"
+            >
+              <div className="spinner" />
+              <p>Analyzing…</p>
+            </div>
+          )}
         </div>
       )}
 
