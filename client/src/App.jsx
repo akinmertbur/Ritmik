@@ -3,6 +3,13 @@ import { fetchPlaylist } from "./services/api";
 import EmotionPhoto from "./components/EmotionPhoto";
 import Card from "./components/ui/Card";
 import Button from "./components/ui/Button";
+import Toast from "./components/ui/Toast";
+import {
+  YouTubeIcon,
+  SpotifyIcon,
+  CopyIcon,
+  ExternalIcon,
+} from "./components/ui/Icons";
 
 const Badge = ({ emotion }) => {
   const map = {
@@ -25,11 +32,21 @@ const Badge = ({ emotion }) => {
   );
 };
 
+function buildYouTubeSearch(q) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(
+    q
+  )}`;
+}
+function buildSpotifySearch(q) {
+  return `https://open.spotify.com/search/${encodeURIComponent(q)}`;
+}
+
 export default function App() {
   const [playlist, setPlaylist] = useState(null);
   const [emotion, setEmotion] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const handleEmotionDetected = async (emo, isRetry = false) => {
     if (!isRetry) setEmotion(emo);
@@ -54,6 +71,15 @@ export default function App() {
 
   const handleRetry = () => {
     if (emotion) handleEmotionDetected(emotion, true);
+  };
+
+  const copyTitle = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      setCopied(true);
+    }
   };
 
   return (
@@ -121,14 +147,51 @@ export default function App() {
               {playlist.map((song, i) => (
                 <li
                   key={i}
-                  className="py-2 first:pt-0 last:pb-0 flex items-center justify-between"
+                  className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3"
                 >
-                  <span>{song}</span>
+                  <span className="truncate">{song}</span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={buildYouTubeSearch(song)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-red-600 text-white px-2 py-1 text-xs hover:bg-red-700"
+                      title="Search on YouTube"
+                    >
+                      <YouTubeIcon className="w-4 h-4" />
+                      YouTube
+                      <ExternalIcon className="w-3.5 h-3.5 opacity-80" />
+                    </a>
+                    <a
+                      href={buildSpotifySearch(song)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md bg-green-600 text-white px-2 py-1 text-xs hover:bg-green-700"
+                      title="Search on Spotify"
+                    >
+                      <SpotifyIcon className="w-4 h-4" />
+                      Spotify
+                      <ExternalIcon className="w-3.5 h-3.5 opacity-80" />
+                    </a>
+                    <button
+                      onClick={() => copyTitle(song)}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-white/60"
+                      title="Copy title"
+                    >
+                      <CopyIcon className="w-4 h-4" />
+                      Copy
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           </Card>
         )}
+        <Toast
+          open={copied}
+          message="Copied to clipboard ✅"
+          onClose={() => setCopied(false)}
+        />
       </div>
     </div>
   );
